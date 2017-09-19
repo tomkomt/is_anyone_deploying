@@ -11,10 +11,69 @@ int redLedPin = 5;
 int yelLedPin = 0;
 int greLedPin = 2;                                                                                                                                                                                                      ;
 
-char wifiSsid[] = "12te";
-char wifiPswd[] = "tusomdoma";
-char url[] = "https://9bf47b18-d4a7-437d-9a02-0c8456cdbcdb-bluemix:f3f4c7d8dd4e4237242c0987302d6b3a4a7370480ca465e86fdff721f57e52d9@9bf47b18-d4a7-437d-9a02-0c8456cdbcdb-bluemix.cloudant.com/tonis_deployments/_all_docs";
-char* certThumbprint = "9F:53:E5:11:69:A4:85:22:00:19:AB:1B:A4:19:18:D5:F1:AD:21:20";
+char* wifiSsid = "12te";
+char* wifiPswd = "tusomdoma";
+char* host = "is-toni-deploying.eu-gb.mybluemix.net";
+char* url = "/esp/opm";
+char* certThumbprint = "4B E9 5D 98 11 8E E1 65 B6 53 7E 21 FC 2B F7 BE 73 36 85 0F";
+
+void setup() {
+  pinMode(redLedPin, OUTPUT);
+  pinMode(yelLedPin, OUTPUT);
+  pinMode(greLedPin, OUTPUT);
+  Serial.begin(115200);
+
+  WiFiMulti.addAP(wifiSsid, wifiPswd);
+
+  diodesTest();
+}
+
+void loop() {
+  if ((WiFiMulti.run() == WL_CONNECTED)) {
+    Serial.println("[WIFI] Connected");
+
+    HTTPClient http;
+    Serial.println("[HTTPS] begin...");
+    http.begin(host, 443, url, true, certThumbprint);
+    Serial.println("[HTTPS] connect...");
+    int httpCode = http.GET();
+    getPendingState();
+    if (httpCode > 0) {
+      Serial.printf("[HTTPS] GET... code: %d\n", httpCode);
+      String payload = http.getString();
+      switch (payload.toInt()) {
+        case 0:
+          Serial.println("[Response] Server is DOWN...");
+          getDownState();
+          break;
+
+        case 1:
+          Serial.println("[Response] Server is UP...");
+          getUpState();
+          break;
+
+        case 2:
+          Serial.println("[Response] Last status is too old...");
+          getTooOldState();
+          break;
+
+        default:
+          Serial.println("[Response] Cannot understand server's status...");
+          Serial.println(payload);
+          getMismatchState();
+          break;
+      }
+    } else {
+      Serial.printf("[HTTPS] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
+      notConnectedState();
+    }
+    http.end();
+  } else {
+    Serial.println("[WIFI] Not connected");
+    notConnectedState();
+  }
+  Serial.println("Reconnecting...");
+}
 
 void shutAll() {
   digitalWrite(redLedPin, LOW);
@@ -24,29 +83,49 @@ void shutAll() {
 }
 
 void notConnectedState() {
-  for (int i = 0; i <= 4; i++) {
-    shutAll();
-    digitalWrite(yelLedPin, HIGH);
-    delay(250);
-    digitalWrite(yelLedPin, LOW);
-    delay(100);
+  shutAll();
+  for(int i=0;i<25;i++) {
     digitalWrite(redLedPin, HIGH);
-    delay(250);
+    digitalWrite(yelLedPin, HIGH);
+    delay(600);
     digitalWrite(redLedPin, LOW);
-    delay(750);
+    digitalWrite(yelLedPin, LOW);
+    delay(600);
   }
 }
 
-void getFailureState() {
+void getMismatchState() {
   shutAll();
-  digitalWrite(redLedPin, HIGH);
-  delay(10000);
+  for(int i=0;i<50;i++) {
+    digitalWrite(redLedPin, HIGH);
+    digitalWrite(yelLedPin, LOW);
+    digitalWrite(greLedPin, HIGH);
+    delay(600);
+    digitalWrite(redLedPin, LOW);
+    digitalWrite(yelLedPin, HIGH);
+    digitalWrite(greLedPin, LOW);
+    delay(600);
+  }
 }
 
-void getSuccessState() {
+void getDownState() {
+  shutAll();
+  digitalWrite(redLedPin, HIGH);
+  delay(60000);
+}
+
+void getTooOldState() {
+  shutAll();
+  digitalWrite(redLedPin, HIGH);
+  digitalWrite(yelLedPin, HIGH);
+  digitalWrite(greLedPin, HIGH);
+  delay(60000);
+}
+
+void getUpState() {
   shutAll();
   digitalWrite(greLedPin, HIGH);
-  delay(10000);
+  delay(60000);
 }
 
 void getPendingState() {
@@ -67,42 +146,4 @@ void diodesTest() {
   delay(200);
   digitalWrite(redLedPin, LOW);
   delay(500);
-}
-
-void setup() {
-  pinMode(redLedPin, OUTPUT);
-  pinMode(yelLedPin, OUTPUT);
-  pinMode(greLedPin, OUTPUT);
-  Serial.begin(115200);
-
-  WiFiMulti.addAP(wifiSsid, wifiPswd);
-  
-  diodesTest();
-}
-
-void loop() {
-  if((WiFiMulti.run() == WL_CONNECTED)) {
-    Serial.println("[WIFI] Connected");
-    
-    HTTPClient http;
-    Serial.println("[HTTP] begin...");
-    http.begin(url, certThumbprint);
-    getPendingState();
-    Serial.println("[HTTP] request payload...");
-    int httpCode = http.GET();
-    if(httpCode > 0) {
-      Serial.printf("[HTTP] GET... code: %d\n", httpCode);
-      String payload = http.getString();
-      Serial.println(payload);
-      getSuccessState();
-    } else {
-      Serial.printf("[HTTP] GET... failed, error: %s\n", http.errorToString(httpCode).c_str());
-      getFailureState();
-    }
-    http.end();
-  } else {
-    Serial.println("[WIFI] Not connected");
-    notConnectedState();
-  }
-  Serial.println("Reconnecting...");  
 }
